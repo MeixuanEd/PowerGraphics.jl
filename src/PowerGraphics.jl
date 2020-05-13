@@ -20,6 +20,7 @@ import Reexport
 import Requires
 import Colors
 import DataFrames
+import TimeSeries
 import YAML
 Reexport.@reexport using Plots
 import PowerSystems

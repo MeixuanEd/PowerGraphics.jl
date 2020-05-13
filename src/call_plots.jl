@@ -598,37 +598,43 @@ function demand_plot(results::Array; kwargs...)
     save_fig = get(kwargs, :save, nothing)
     return _demand_plot_internal(new_results, backend; kwargs...)
 end
-# TODO make this function
 
-function make_demand_plot_data(system::PSY.System; kwargs...)
-    names = collect(PSY.get_name.(PSY.get_components(PSY.PowerLoad, system)))
-    component = PSY.get_component(PSY.PowerLoad, system, names[1])
-    forecast_key = collect(PSY.get_forecast_keys(component))[1]
-    initial_time = get(kwargs, :initial_time, forecast_key.initial_time)
+function _get_loads(system::PSY.System, bus::PSY.Bus)
+    return (load for load in PSY.get_components(PowerLoad, system) if PSY.get_bus(load) == bus)
+end
+function _get_loads(system::PSY.System, agg::T) where T <: PSY.AggregationTopology
+    return PSY.get_components_in_aggregation_topology(PSY.PowerLoad, system, agg)
+end
+function _get_loads(system::PSY.System, load::PSY.PowerLoad)
+    return [load]
+end
+function _get_loads(system::PSY.System, sys::PSY.System)
+    return PSY.get_components(PSY.PowerLoad, system)
+end
+
+function make_demand_plot_data(system::PSY.System, aggregation::Union{Type{PSY.PowerLoad}, Type{PSY.Bus}, Type{PSY.System}, Type{<:PSY.AggregationTopology}} = PSY.PowerLoad; kwargs...)
+    aggregation_components = aggregation == PSY.System ? [system] : PSY.get_components(aggregation, system)
+    #names = collect(PSY.get_name.(aggregation_components))
     horizon = get(kwargs, :horizon, PSY.get_forecasts_horizon(system))
-    f = PSY.get_forecast(
-        PSY.Deterministic,
-        component,
-        initial_time,
-        forecast_key.label,
-        horizon,
-    )
-    parameters = DataFrames.rename(
-        DataFrames.DataFrame(PSY.get_forecast_values(component, f)),
-        :A => Symbol(names[1]),
-    )
-    for i in 2:length(names)
-        component = PSY.get_component(PSY.PowerLoad, system, names[i])
-        forecast_key = collect(PSY.get_forecast_keys(component))[1]
-        f = PSY.get_forecast(
-            PSY.Deterministic,
-            component,
-            initial_time,
-            forecast_key.label,
-            horizon,
-        )
-        df = DataFrames.DataFrame(PSY.get_forecast_values(component, f))
-        parameters[!, Symbol(names[i])] = df[:, 2]
+    initial_time = get(kwargs, :initial_time, PSY.get_forecasts_initial_time(system))
+    parameters = DataFrames.DataFrame(timestamp = Dates.DateTime[])
+    for agg in aggregation_components
+        loads = _get_loads(system, agg)
+        colname = aggregation == PSY.System ? "System" : PSY.get_name(agg)
+        load_values = []
+        for load in loads
+            f = PSY.get_forecast_values(
+                PSY.Deterministic,
+                load,
+                initial_time,
+                "get_maxactivepower",
+                horizon,
+            )
+            push!(load_values, values(f))
+            parameters = DataFrames.join(parameters, DataFrames.DataFrame(timestamp = TimeSeries.timestamp(f)), on = :timestamp, kind = :outer)
+        end
+        load_values = length(loads) == 1 ? load_values[1] : dropdims(sum(Matrix(reduce(hcat, load_values)),dims = 2), dims = 2)
+        parameters[:, Symbol(colname)] = load_values
     end
     save_fig = get(kwargs, :save, nothing)
     return parameters
