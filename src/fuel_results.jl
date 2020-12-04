@@ -114,9 +114,11 @@ function make_fuel_dictionary(sys::PSY.System, mapping::Dict{NamedTuple, String}
     end
 
     for gen in generators
-        fuel = hasmethod(PSY.get_fuel, Tuple{typeof(gen)}) ? PSY.get_fuel(gen) : nothing
-        category = get_generator_category(fuel, PSY.get_prime_mover(gen), mapping)
-        push!(gen_categories["$category"], (string(typeof(gen)), (PSY.get_name(gen))))
+        if PSY.get_available(gen)
+            fuel = hasmethod(PSY.get_fuel, Tuple{typeof(gen)}) ? PSY.get_fuel(gen) : nothing
+            category = get_generator_category(fuel, PSY.get_prime_mover(gen), mapping)
+            push!(gen_categories["$category"], (string(typeof(gen)), (PSY.get_name(gen))))
+        end
     end
     [delete!(gen_categories, "$k") for (k, v) in gen_categories if isempty(v)]
     return gen_categories
